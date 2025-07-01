@@ -1,0 +1,25 @@
+FROM mattermost/mattermost-team-edition:latest
+
+# Thư mục mặc định trong image official là /mattermost
+WORKDIR /mattermost
+
+# Copy code đã sửa (ví dụ source hoặc binary) vào image,
+# bạn có thể copy cả thư mục hoặc chỉ binary mattermost
+COPY ./server/bin/linux_amd64/mattermost /mattermost/bin/mattermost
+COPY ./webapp/channels/dist /mattermost/client
+
+# Nếu bạn có config hoặc file khác thì copy thêm
+
+# Chạy lệnh start mặc định
+ENTRYPOINT ["/mattermost/bin/mattermost"]
+CMD ["web"]
+
+# Hoặc copy source code nếu bạn muốn build tại runtime (ít phổ biến)
+# COPY ./your-modified-source ./your-modified-source
+
+# Nếu bạn chỉ copy binary đã build sẵn thì không cần build lại
+
+USER mattermost
+
+ENTRYPOINT ["./bin/mattermost"]
+CMD ["server"]

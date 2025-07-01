@@ -4,6 +4,7 @@
 package api4
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -1913,9 +1914,9 @@ func login(c *Context, w http.ResponseWriter, r *http.Request) {
 	id := props["id"]
 	loginId := props["login_id"]
 	password := props["password"]
-	mfaToken := props["token"]
+	// mfaToken := props["token"]
 	deviceId := props["device_id"]
-	ldapOnly := props["ldap_only"] == "true"
+	// ldapOnly := props["ldap_only"] == "true"
 
 	if *c.App.Config().ExperimentalSettings.ClientSideCertEnable {
 		if license := c.App.Channels().License(); license == nil || !*license.Features.FutureFeatures {
@@ -1941,9 +1942,119 @@ func login(c *Context, w http.ResponseWriter, r *http.Request) {
 	model.AddEventParameterToAuditRec(auditRec, "login_id", loginId)
 	model.AddEventParameterToAuditRec(auditRec, "device_id", deviceId)
 
-	c.LogAuditWithUserId(id, "attempt - login_id="+loginId)
+	// c.LogAuditWithUserId(id, "attempt - login_id="+loginId)
+	mlog.Info("===> Login attempt", mlog.String("loginId", loginId))
+	// Chuẩn bị payload gửi API bên ngoài
+	loginPayload := map[string]interface{}{
+		"username": loginId,
+		"password": password,
+		"domain": "VIETTELGROUP",
+		"oauth_configuration_id": 0,
+	}
+	payloadBytes, err1 := json.Marshal(loginPayload)
+	if err1 != nil {
+		c.Err = model.NewAppError("login", "external_login.json_marshal_failed", nil, err1.Error(), http.StatusInternalServerError)
+		return
+	}
+	
+	req, err2 := http.NewRequest("POST", "https://nbox.viettel.vn/api/1.0/login", bytes.NewBuffer(payloadBytes))
+	if err2 != nil {
+	c.Err = model.NewAppError("login", "external_login.request_creation_failed", nil, err2.Error(), http.StatusInternalServerError)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	
+	client := &http.Client{}
+	resp, err3 := client.Do(req)
+	if err3 != nil {
+		c.Logger.Error("Login sso error", mlog.Err(err3))
+		mlog.Err(err3)
+		c.Err = model.NewAppError("login", "external_login.request_failed", nil, err3.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+	
+	// Nếu status code là 461 => thành công
+	c.Logger.Info("External login response status code")
+	mlog.Int("status_code", resp.StatusCode)
+	if resp.StatusCode != 200 {
+		mlog.Info("Login fail: invalid_credentials")
+		// mlog.Int(resp.StatusCode)
+		c.Err = model.NewAppError("login", "external_login.invalid_credentials", nil, "", http.StatusUnauthorized)
+		return
+	}
+	mlog.String("===> chuẩn bị lấy user", "")
+	user, appErr := c.App.GetUserByUsername(loginId)
+	
+	if appErr != nil {
+		// Nếu user không tồn tại, tạo mới
+		mlog.String("===> Login lỗi lấy user", appErr.Id)
+		if 1==1 {
+			mlog.Info("store.sql_user.get_by_username.app_error")
+			newUser := &model.User{
+				Username: loginId,
+				Email: loginId + "@viettel.com.vn", // bạn có thể thay đổi domain email phù hợp
+				Roles: "system_user",
+				Password: "autogenRRRHVHJ@_123456dlfjdlkfjdlfjdlkmtuw09ưpojfgsrg",
+				FirstName: loginId,
+				LastName: loginId,
 
-	user, err := c.App.AuthenticateUserForLogin(c.AppContext, id, loginId, password, mfaToken, "", ldapOnly)
+				// Bạn có thể thêm các trường khác như FirstName, LastName nếu có dữ liệu
+			}
+	
+		createdUser, createErr := c.App.CreateUser(c.AppContext, newUser)
+		if createErr != nil {
+			mlog.Info("slỗi tạo mới user")
+			c.Logger.Error("Lỗi khi tạo mới user", mlog.Err(createErr))
+			c.Err = createErr
+			return
+		}
+		teams, appErr := c.App.GetAllTeams()
+		if appErr != nil {
+			c.Logger.Error("Không lấy được danh sách team", mlog.Err(appErr))
+			c.Err = appErr
+			return
+		}
+		
+		if len(teams) == 0 {
+			c.Logger.Error("Không có team nào trong hệ thống")
+			c.Err = model.NewAppError("getFirstTeam", "api.team.no_teams.app_error", nil, "", http.StatusNotFound)
+			return
+		}
+		
+		team := teams[0] // Lấy team đầu tiên
+		
+		_, _, appErr = c.App.AddUserToTeam(c.AppContext, team.Id, createdUser.Id, "")
+			if appErr != nil {
+			c.Logger.Error("Không thể thêm user vào team", mlog.Err(appErr))
+			c.Err = appErr
+			return
+		}
+		
+		user = createdUser
+	} else {
+	//Cập nhật phone và fullname 
+
+	// Lỗi khác khi tìm user
+		c.Logger.Error("Lỗi khi tìm user theo username", mlog.String("username", loginId), mlog.Err(appErr))
+		c.Err = appErr
+		return
+	}
+	}
+	mlog.String("===> đã lấy user", "")
+	
+	// Đến đây là đăng nhập thành công
+	// Tìm user tương ứng trong hệ thống Mattermost
+	user, err := c.App.GetUserByUsername(loginId)
+	// Nếu cần, lấy user thật từ DB
+	if err != nil {
+		c.Err = model.NewAppError("login", "api.user.login.user_not_found", nil, "", http.StatusUnauthorized)
+		return
+	}
+	if resp.StatusCode == 200{
+		
+	}
+	// user, err := c.App.AuthenticateUserForLogin(c.AppContext, id, loginId, password, mfaToken, "", ldapOnly)
 	if err != nil {
 		c.LogAuditWithUserId(id, "failure - login_id="+loginId)
 		c.Err = err

@@ -110,6 +110,8 @@ type User struct {
 	DisableWelcomeEmail    bool        `json:"disable_welcome_email"`
 	LastLogin              int64       `json:"last_login,omitempty"`
 	MfaUsedTimestamps      StringArray `json:"mfa_used_timestamps,omitempty"`
+	Phone                  string      `json:"phone"`
+	Fullname               string      `json:fullname`
 }
 
 func (u *User) Auditable() map[string]any {
@@ -141,6 +143,8 @@ func (u *User) Auditable() map[string]any {
 		"terms_of_service_id":        u.TermsOfServiceId,
 		"terms_of_service_create_at": u.TermsOfServiceCreateAt,
 		"disable_welcome_email":      u.DisableWelcomeEmail,
+		"phone":                      u.Phone,
+		"fullname":                   u.Fullname,
 	}
 }
 
@@ -164,6 +168,8 @@ func (u *User) LogClone() any {
 		"timezone":        u.Timezone,
 		"mfa_active":      u.MfaActive,
 		"remote_id":       u.GetRemoteID(),
+		"phone":           u.Phone,
+		"fullname":        u.Fullname,
 	}
 }
 
@@ -193,6 +199,8 @@ type UserPatch struct {
 	Locale      *string   `json:"locale"`
 	Timezone    StringMap `json:"timezone"`
 	RemoteId    *string   `json:"remote_id"`
+	Fullname    *string   `json:"full_name"`
+	Phone       *string   `json:"phone"`
 }
 
 func (u *UserPatch) Auditable() map[string]any {
@@ -208,6 +216,8 @@ func (u *UserPatch) Auditable() map[string]any {
 		"locale":       u.Locale,
 		"timezone":     u.Timezone,
 		"remote_id":    u.RemoteId,
+		"fullname":     u.Fullname,
+		"phone":        u.Phone,
 	}
 }
 
@@ -478,7 +488,7 @@ func (u *User) PreSave() *AppError {
 	u.FirstName = SanitizeUnicode(u.FirstName)
 	u.LastName = SanitizeUnicode(u.LastName)
 	u.Nickname = SanitizeUnicode(u.Nickname)
-
+	u.Fullname = SanitizeUnicode(u.Fullname)
 	u.Username = NormalizeUsername(u.Username)
 	u.Email = NormalizeEmail(u.Email)
 
@@ -534,6 +544,7 @@ func (u *User) PreUpdate() {
 	u.FirstName = SanitizeUnicode(u.FirstName)
 	u.LastName = SanitizeUnicode(u.LastName)
 	u.Nickname = SanitizeUnicode(u.Nickname)
+	u.Fullname = SanitizeUnicode(u.Fullname)
 	u.BotDescription = SanitizeUnicode(u.BotDescription)
 
 	u.Username = NormalizeUsername(u.Username)
@@ -622,7 +633,12 @@ func (u *User) Patch(patch *UserPatch) {
 	if patch.Username != nil {
 		u.Username = *patch.Username
 	}
-
+	if patch.Fullname != nil{
+		u.Fullname = *patch.Fullname
+	}
+	if patch.Phone != nil{
+		u.Phone = *patch.Phone
+	}
 	if patch.Nickname != nil {
 		u.Nickname = *patch.Nickname
 	}

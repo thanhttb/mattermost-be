@@ -189,7 +189,85 @@ func createEphemeralPost(c *Context, w http.ResponseWriter, r *http.Request) {
 		c.Logger.Warn("Error while writing response", mlog.Err(err))
 	}
 }
+// thanhttb1: Them post duoc reply trong post neu ton tai reply_to_id
+func includeReplyPostsInList(c *Context, list *model.PostList, includeDeleted bool) *model.AppError {
+	if list == nil || len(list.Posts) == 0 {
+		return nil
+	}
 
+	// Collect unique parent post IDs from replies (both RootId and ReplyToId)
+	parentPostIds := make(map[string]bool)
+	postsNeedingParents := make([]*model.Post, 0)
+	
+	for _, post := range list.Posts {
+		var parentId string
+		
+		// Check ReplyToId (for non-threaded replies)
+		if post.ReplyToId != "" {
+			parentId = post.ReplyToId
+		}
+		
+		if parentId != "" {
+			parentPostIds[parentId] = true
+			postsNeedingParents = append(postsNeedingParents, post)
+		}
+	}
+
+	if len(parentPostIds) == 0 {
+		return nil
+	}
+
+	// Convert map keys to slice
+	parentPostIdSlice := make([]string, 0, len(parentPostIds))
+	for parentId := range parentPostIds {
+		parentPostIdSlice = append(parentPostIdSlice, parentId)
+	}
+
+	// Fetch parent posts
+	parentPosts, _, err := c.App.GetPostsByIds(parentPostIdSlice)
+	if err != nil {
+		return err
+	}
+
+	// Create a map for quick lookup
+	parentPostMap := make(map[string]*model.Post)
+	for _, parentPost := range parentPosts {
+		// Check permissions for parent post's channel
+		parentChannel, channelErr := c.App.GetChannel(c.AppContext, parentPost.ChannelId)
+		if channelErr != nil {
+			continue // Skip this parent post if we can't get its channel
+		}
+
+		if !c.App.SessionHasPermissionToReadChannel(c.AppContext, *c.AppContext.Session(), parentChannel) {
+			continue // Skip this parent post if user doesn't have permission
+		}
+
+		// Check if we should include deleted posts
+		if parentPost.DeleteAt != 0 && !includeDeleted {
+			continue // Skip deleted posts if not requested
+		}
+
+		// Prepare the post for client (sanitize, etc.)
+		parentPost = c.App.PreparePostForClient(c.AppContext, parentPost, false, false, true)
+		parentPostMap[parentPost.Id] = parentPost
+	}
+
+	// Add ReplyPost field to posts that have parents
+	for _, post := range postsNeedingParents {
+		var parentId string
+		
+		if post.ReplyToId != "" {
+			parentId = post.ReplyToId
+		}
+		
+		if parentPost, exists := parentPostMap[parentId]; exists {
+			// Add the parent post as ReplyPost field
+			post.AddProp("reply_post", parentPost)
+		}
+	}
+
+	return nil
+}
 func getPostsForChannel(c *Context, w http.ResponseWriter, r *http.Request) {
 	c.RequireChannelId()
 	if c.Err != nil {
@@ -222,6 +300,7 @@ func getPostsForChannel(c *Context, w http.ResponseWriter, r *http.Request) {
 	collapsedThreads := r.URL.Query().Get("collapsedThreads") == "true"
 	collapsedThreadsExtended := r.URL.Query().Get("collapsedThreadsExtended") == "true"
 	includeDeleted := r.URL.Query().Get("include_deleted") == "true"
+	// includeReplyPosts := r.URL.Query().Get("include_reply_posts") == "true" // New parameter
 	channelId := c.Params.ChannelId
 	page := c.Params.Page
 	perPage := c.Params.PerPage
@@ -289,6 +368,14 @@ func getPostsForChannel(c *Context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Include reply posts if requested
+
+	err = includeReplyPostsInList(c, list, includeDeleted)
+	if err != nil {
+		c.Err = err
+		return
+	}
+
 	if etag != "" {
 		w.Header().Set(model.HeaderEtagServer, etag)
 	}
@@ -305,6 +392,7 @@ func getPostsForChannel(c *Context, w http.ResponseWriter, r *http.Request) {
 		c.Logger.Warn("Error while writing response", mlog.Err(err))
 	}
 }
+
 
 func getPostsForChannelAroundLastUnread(c *Context, w http.ResponseWriter, r *http.Request) {
 	c.RequireUserId().RequireChannelId()
@@ -358,7 +446,11 @@ func getPostsForChannelAroundLastUnread(c *Context, w http.ResponseWriter, r *ht
 			return
 		}
 	}
-
+	err = includeReplyPostsInList(c, postList, false)
+	if err != nil {
+		c.Err = err
+		return
+	}
 	postList.NextPostId = c.App.GetNextPostIdFromPostList(postList, collapsedThreads)
 	postList.PrevPostId = c.App.GetPrevPostIdFromPostList(postList, collapsedThreads)
 
