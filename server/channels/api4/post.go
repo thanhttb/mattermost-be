@@ -104,6 +104,26 @@ func createPost(c *Context, w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	//thanhttb1 Kiem tra reply | thread
+    disableThreading := r.URL.Query().Get("isReply") == "true"
+    
+    // Get channel to check automatic threading disable
+    channel, err := c.App.GetChannel(c.AppContext, post.ChannelId)
+    if err != nil {
+        c.Err = err
+        return
+    }
+	// //Kiem tra co dang trong DM
+    shouldDisableThreading := disableThreading || 
+                            (channel.Type == model.ChannelTypeDirect)
+
+    //Luu vet rep
+    if shouldDisableThreading && post.RootId != "" {
+        // Move RootId to ReplyToId for context preservation
+        post.ReplyToId = post.RootId
+        post.RootId = ""  // Clear to prevent threading
+    }	
+
 	rp, err := c.App.CreatePostAsUser(c.AppContext, c.App.PostWithProxyRemovedFromImageURLs(&post), c.AppContext.Session().Id, setOnlineBool)
 	if err != nil {
 		c.Err = err

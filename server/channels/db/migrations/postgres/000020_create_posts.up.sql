@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS posts (
     userid VARCHAR(26),
     channelid VARCHAR(26),
     rootid VARCHAR(26),
+    replytoid VARCHAR(26),
     parentid VARCHAR(26),
     originalid VARCHAR(26),
     message VARCHAR(65535),
@@ -24,6 +25,7 @@ CREATE INDEX IF NOT EXISTS idx_posts_update_at ON posts(updateat);
 CREATE INDEX IF NOT EXISTS idx_posts_create_at ON posts(createat);
 CREATE INDEX IF NOT EXISTS idx_posts_delete_at ON posts(deleteat);
 CREATE INDEX IF NOT EXISTS idx_posts_root_id ON posts(rootid);
+CREATE INDEX IF NOT EXISTS idx_posts_reply_to_id ON posts(replytoid);
 CREATE INDEX IF NOT EXISTS idx_posts_user_id ON posts(userid);
 CREATE INDEX IF NOT EXISTS idx_posts_is_pinned ON posts(ispinned);
 CREATE INDEX IF NOT EXISTS idx_posts_channel_id_update_at ON posts(channelid, updateat);

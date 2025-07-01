@@ -96,6 +96,8 @@ type Post struct {
 	UserId     string `json:"user_id"`
 	ChannelId  string `json:"channel_id"`
 	RootId     string `json:"root_id"`
+	ReplyToId  string `json:"reply_to_id"`       // NEW: Reply context
+
 	OriginalId string `json:"original_id"`
 
 	Message string `json:"message"`
@@ -138,6 +140,7 @@ func (o *Post) Auditable() map[string]any {
 		"user_id":         o.UserId,
 		"channel_id":      o.ChannelId,
 		"root_id":         o.RootId,
+		"reply_to_id":     o.ReplyToId,
 		"original_id":     o.OriginalId,
 		"type":            o.Type,
 		"props":           o.GetProps(),
@@ -318,6 +321,7 @@ func (o *Post) ShallowCopy(dst *Post) error {
 	dst.UserId = o.UserId
 	dst.ChannelId = o.ChannelId
 	dst.RootId = o.RootId
+	dst.ReplyToId = o.ReplyToId
 	dst.OriginalId = o.OriginalId
 	dst.Message = o.Message
 	dst.MessageSource = o.MessageSource

@@ -1,6 +1,5 @@
 // Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
-
 package sqlstore
 
 import (
@@ -64,6 +63,7 @@ func postSliceColumnsWithTypes() []struct {
 		{"UserId", reflect.String},
 		{"ChannelId", reflect.String},
 		{"RootId", reflect.String},
+		{"ReplyToId", reflect.String},
 		{"OriginalId", reflect.String},
 		{"Message", reflect.String},
 		{"Type", reflect.String},
@@ -87,6 +87,7 @@ func postToSlice(post *model.Post) []any {
 		post.UserId,
 		post.ChannelId,
 		post.RootId,
+		post.ReplyToId,
 		post.OriginalId,
 		post.Message,
 		post.Type,
@@ -369,6 +370,7 @@ func (s *SqlPostStore) Update(rctx request.CTX, newPost *model.Post, oldPost *mo
 			UserId=:UserId,
 			ChannelId=:ChannelId,
 			RootId=:RootId,
+			ReplyToId=:ReplyToId,
 			OriginalId=:OriginalId,
 			Message=:Message,
 			Type=:Type,
@@ -440,6 +442,7 @@ func (s *SqlPostStore) OverwriteMultiple(rctx request.CTX, posts []*model.Post) 
 					UserId=:UserId,
 					ChannelId=:ChannelId,
 					RootId=:RootId,
+					ReplyToId=:ReplyToId,
 					OriginalId=:OriginalId,
 					Message=:Message,
 					Type=:Type,
