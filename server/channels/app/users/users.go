@@ -68,7 +68,7 @@ func (us *UserService) createUser(rctx request.CTX, user *model.User) (*model.Us
 	if err != nil {
 		return nil, err
 	}
-
+	fmt.Println("------", ruser.Phone)
 	if user.EmailVerified {
 		if err := us.verifyUserEmail(ruser.Id, user.Email); err != nil {
 			mlog.Warn("Failed to set email verified", mlog.Err(err))

@@ -1300,7 +1300,7 @@ func (a *App) UpdateUser(c request.CTX, user *model.User, sendNotifications bool
 			return nil, err
 		}
 	}
-
+	
 	var newEmail string
 	if user.Email != prev.Email {
 		if !users.CheckUserDomain(user, *a.Config().TeamSettings.RestrictCreationToDomains) {

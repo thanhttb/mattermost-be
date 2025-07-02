@@ -111,7 +111,7 @@ type User struct {
 	LastLogin              int64       `json:"last_login,omitempty"`
 	MfaUsedTimestamps      StringArray `json:"mfa_used_timestamps,omitempty"`
 	Phone                  string      `json:"phone"`
-	Fullname               string      `json:fullname`
+	Fullname               string      `json:"fullname"`
 }
 
 func (u *User) Auditable() map[string]any {
@@ -199,7 +199,7 @@ type UserPatch struct {
 	Locale      *string   `json:"locale"`
 	Timezone    StringMap `json:"timezone"`
 	RemoteId    *string   `json:"remote_id"`
-	Fullname    *string   `json:"full_name"`
+	Fullname    *string   `json:"fullname"`
 	Phone       *string   `json:"phone"`
 }
 
@@ -545,6 +545,8 @@ func (u *User) PreUpdate() {
 	u.LastName = SanitizeUnicode(u.LastName)
 	u.Nickname = SanitizeUnicode(u.Nickname)
 	u.Fullname = SanitizeUnicode(u.Fullname)
+	u.Phone = SanitizeUnicode(u.Phone)  // ADD THIS LINE
+
 	u.BotDescription = SanitizeUnicode(u.BotDescription)
 
 	u.Username = NormalizeUsername(u.Username)
@@ -973,11 +975,19 @@ func (u *User) SetProp(name string, value string) {
 
 func (u *User) ToPatch() *UserPatch {
 	return &UserPatch{
-		Username: &u.Username, Password: &u.Password,
-		Nickname: &u.Nickname, FirstName: &u.FirstName, LastName: &u.LastName,
-		Position: &u.Position, Email: &u.Email,
-		Props: u.Props, NotifyProps: u.NotifyProps,
-		Locale: &u.Locale, Timezone: u.Timezone,
+		Username: &u.Username, 
+		Password: &u.Password,
+		Nickname: &u.Nickname, 
+		FirstName: &u.FirstName, 
+		LastName: &u.LastName,
+		Position: &u.Position, 
+		Email: &u.Email,
+		Props: u.Props, 
+		NotifyProps: u.NotifyProps,
+		Locale: &u.Locale, 
+		Timezone: u.Timezone,
+		Phone: &u.Phone,      
+		Fullname: &u.Fullname,  
 	}
 }
 
@@ -995,6 +1005,10 @@ func (u *UserPatch) SetField(fieldName string, fieldValue string) {
 		u.Position = &fieldValue
 	case "Username":
 		u.Username = &fieldValue
+	case "Phone":     
+		u.Phone = &fieldValue
+	case "Fullname":  
+		u.Fullname = &fieldValue
 	}
 }
 

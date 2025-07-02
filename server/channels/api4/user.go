@@ -1983,23 +1983,59 @@ func login(c *Context, w http.ResponseWriter, r *http.Request) {
 		c.Err = model.NewAppError("login", "external_login.invalid_credentials", nil, "", http.StatusUnauthorized)
 		return
 	}
+	// Parse response body to extract user data
+	respBodyBytes, bodyErr := io.ReadAll(resp.Body)
+	if bodyErr != nil {
+		c.Logger.Error("Failed to read response body", mlog.Err(bodyErr))
+		c.Err = model.NewAppError("login", "external_login.response_read_failed", nil, bodyErr.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var nboxResponse struct {
+		Success bool `json:"success"`
+		Data struct {
+			User struct {
+				Fullname string `json:"fullname"`
+				Phone    string `json:"phone"`
+			} `json:"user"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(respBodyBytes, &nboxResponse); err != nil {
+		c.Logger.Error("Failed to parse nbox response", mlog.Err(err))
+		c.Err = model.NewAppError("login", "external_login.response_parse_failed", nil, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	mlog.String("===> chuẩn bị lấy user", "")
 	user, appErr := c.App.GetUserByUsername(loginId)
-	
 	if appErr != nil {
 		// Nếu user không tồn tại, tạo mới
 		mlog.String("===> Login lỗi lấy user", appErr.Id)
 		if 1==1 {
 			mlog.Info("store.sql_user.get_by_username.app_error")
+			// Split fullname into first and last name
+			fullName := nboxResponse.Data.User.Fullname
+			firstName := loginId
+			lastName := loginId
+			if fullName != "" {
+				nameParts := strings.Fields(fullName)
+				if len(nameParts) > 0 {
+					firstName = nameParts[0]
+					if len(nameParts) > 1 {
+						lastName = strings.Join(nameParts[1:], " ")
+					}
+				}
+			}
+
 			newUser := &model.User{
 				Username: loginId,
 				Email: loginId + "@viettel.com.vn", // bạn có thể thay đổi domain email phù hợp
 				Roles: "system_user",
 				Password: "autogenRRRHVHJ@_123456dlfjdlkfjdlfjdlkmtuw09ưpojfgsrg",
-				FirstName: loginId,
-				LastName: loginId,
-
-				// Bạn có thể thêm các trường khác như FirstName, LastName nếu có dữ liệu
+				FirstName: firstName,
+				LastName: lastName,
+				Phone: nboxResponse.Data.User.Phone,
+				Fullname: nboxResponse.Data.User.Fullname,
 			}
 	
 		createdUser, createErr := c.App.CreateUser(c.AppContext, newUser)
@@ -2032,14 +2068,63 @@ func login(c *Context, w http.ResponseWriter, r *http.Request) {
 		}
 		
 		user = createdUser
-	} else {
-	//Cập nhật phone và fullname 
-
-	// Lỗi khác khi tìm user
-		c.Logger.Error("Lỗi khi tìm user theo username", mlog.String("username", loginId), mlog.Err(appErr))
-		c.Err = appErr
-		return
-	}
+		} else {
+		// Lỗi khác khi tìm user
+			c.Logger.Error("Lỗi khi tìm user theo username", mlog.String("username", loginId), mlog.Err(appErr))
+			c.Err = appErr
+			return
+		}
+	}else {
+		// User exists, update phone and fullname if they have changed
+		fullName := nboxResponse.Data.User.Fullname
+		phone := nboxResponse.Data.User.Phone
+		
+		needsUpdate := false
+		
+		// Split fullname into first and last name
+		firstName := user.FirstName
+		lastName := user.LastName
+		if fullName != "" {
+			nameParts := strings.Fields(fullName)
+			if len(nameParts) > 0 {
+				newFirstName := nameParts[0]
+				var newLastName string
+				if len(nameParts) > 1 {
+					newLastName = strings.Join(nameParts[1:], " ")
+				}
+				
+				if newFirstName != user.FirstName || newLastName != user.LastName {
+					firstName = newFirstName
+					lastName = newLastName
+					needsUpdate = true
+				}
+			}
+		}
+		
+		// Check if phone needs update
+		if phone != "" && phone != user.Phone {
+			needsUpdate = true
+		}
+		
+		if needsUpdate {
+			// Create a patch to update user information
+			patch := &model.UserPatch{
+				FirstName: &firstName,
+				LastName: &lastName,
+				Fullname: &fullName,
+				Phone: &phone,
+			}
+			
+			updatedUser, updateErr := c.App.PatchUser(c.AppContext, user.Id, patch, true)
+			if updateErr != nil {
+				c.Logger.Error("Không thể cập nhật thông tin user", mlog.Err(updateErr))
+				// Don't fail login if update fails, just log the error
+				mlog.Warn("Failed to update user info from nbox, continuing with login")
+			} else {
+				user = updatedUser
+				mlog.Info("Updated user info from nbox", mlog.String("userId", user.Id), mlog.String("fullname", fullName), mlog.String("phone", phone))
+			}
+		}
 	}
 	mlog.String("===> đã lấy user", "")
 	
@@ -2048,11 +2133,8 @@ func login(c *Context, w http.ResponseWriter, r *http.Request) {
 	user, err := c.App.GetUserByUsername(loginId)
 	// Nếu cần, lấy user thật từ DB
 	if err != nil {
-		c.Err = model.NewAppError("login", "api.user.login.user_not_found", nil, "", http.StatusUnauthorized)
-		return
-	}
-	if resp.StatusCode == 200{
-		
+	c.Err = model.NewAppError("login", "api.user.login.user_not_found", nil, "", http.StatusUnauthorized)
+	return
 	}
 	// user, err := c.App.AuthenticateUserForLogin(c.AppContext, id, loginId, password, mfaToken, "", ldapOnly)
 	if err != nil {
