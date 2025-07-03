@@ -110,8 +110,9 @@ type User struct {
 	DisableWelcomeEmail    bool        `json:"disable_welcome_email"`
 	LastLogin              int64       `json:"last_login,omitempty"`
 	MfaUsedTimestamps      StringArray `json:"mfa_used_timestamps,omitempty"`
-	Phone                  string      `json:"phone"`
-	Fullname               string      `json:"fullname"`
+	Phone                  string      `json:"phone,omitempty"`
+	Fullname               string      `json:"fullname,omitempty"`
+	
 }
 
 func (u *User) Auditable() map[string]any {
@@ -491,7 +492,8 @@ func (u *User) PreSave() *AppError {
 	u.Fullname = SanitizeUnicode(u.Fullname)
 	u.Username = NormalizeUsername(u.Username)
 	u.Email = NormalizeEmail(u.Email)
-
+	u.Phone = u.Phone
+	u.Fullname = SanitizeUnicode(u.Fullname)
 	if u.CreateAt == 0 {
 		u.CreateAt = GetMillis()
 	}

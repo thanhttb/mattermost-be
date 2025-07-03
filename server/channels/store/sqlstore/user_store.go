@@ -86,6 +86,8 @@ func getUsersColumns() []string {
 		"Users.MfaUsedTimestamps",
 		"Users.RemoteId",
 		"Users.LastLogin",
+		"Users.Phone",
+		"Users.Fullname",
 	}
 }
 
@@ -132,12 +134,12 @@ func (us SqlUserStore) insert(user *model.User) (sql.Result, error) {
 		(Id, CreateAt, UpdateAt, DeleteAt, Username, Password, AuthData, AuthService,
 			Email, EmailVerified, Nickname, FirstName, LastName, Position, Roles, AllowMarketing,
 			Props, NotifyProps, LastPasswordUpdate, LastPictureUpdate, FailedAttempts,
-			Locale, Timezone, MfaActive, MfaSecret, RemoteId, MfaUsedTimestamps)
+			Locale, Timezone, MfaActive, MfaSecret, RemoteId, MfaUsedTimestamps, Phone, Fullname)
 		VALUES
 		(:Id, :CreateAt, :UpdateAt, :DeleteAt, :Username, :Password, :AuthData, :AuthService,
 			:Email, :EmailVerified, :Nickname, :FirstName, :LastName, :Position, :Roles, :AllowMarketing,
 			:Props, :NotifyProps, :LastPasswordUpdate, :LastPictureUpdate, :FailedAttempts,
-			:Locale, :Timezone, :MfaActive, :MfaSecret, :RemoteId, :MfaUsedTimestamps)`
+			:Locale, :Timezone, :MfaActive, :MfaSecret, :RemoteId, :MfaUsedTimestamps, :Phone, :Fullname)`
 
 	user.Props = wrapBinaryParamStringMap(us.IsBinaryParamEnabled(), user.Props)
 	return us.GetMaster().NamedExec(query, user)
@@ -269,7 +271,8 @@ func (us SqlUserStore) Update(rctx request.CTX, user *model.User, trustedUpdateD
 				AllowMarketing=:AllowMarketing, Props=:Props, NotifyProps=:NotifyProps,
 				LastPasswordUpdate=:LastPasswordUpdate, LastPictureUpdate=:LastPictureUpdate,
 				FailedAttempts=:FailedAttempts,Locale=:Locale, Timezone=:Timezone, MfaActive=:MfaActive,
-				MfaSecret=:MfaSecret, RemoteId=:RemoteId, LastLogin=:LastLogin, MfaUsedTimestamps=:MfaUsedTimestamps
+				MfaSecret=:MfaSecret, RemoteId=:RemoteId, LastLogin=:LastLogin, MfaUsedTimestamps=:MfaUsedTimestamps,
+				Phone=:Phone, Fullname=:Fullname
 			WHERE Id=:Id`
 
 	user.Props = wrapBinaryParamStringMap(us.IsBinaryParamEnabled(), user.Props)
@@ -511,26 +514,44 @@ func (us SqlUserStore) GetMany(ctx context.Context, ids []string) ([]*model.User
 
 func (us SqlUserStore) Get(ctx context.Context, id string) (*model.User, error) {
 	query := us.usersQuery.Where("Id = ?", id)
-	queryString, args, err := query.ToSql()
-	if err != nil {
-		return nil, errors.Wrap(err, "users_get_tosql")
-	}
-	row := us.SqlStore.DBXFromContext(ctx).QueryRow(queryString, args...)
-
-	var user model.User
-	var props, notifyProps, timezone []byte
-	err = row.Scan(&user.Id, &user.CreateAt, &user.UpdateAt, &user.DeleteAt, &user.Username,
-		&user.Password, &user.AuthData, &user.AuthService, &user.Email, &user.EmailVerified,
-		&user.Nickname, &user.FirstName, &user.LastName, &user.Position, &user.Roles,
-		&user.AllowMarketing, &props, &notifyProps, &user.LastPasswordUpdate, &user.LastPictureUpdate,
-		&user.FailedAttempts, &user.Locale, &timezone, &user.MfaActive, &user.MfaSecret, &user.MfaUsedTimestamps,
-		&user.RemoteId, &user.LastLogin, &user.IsBot, &user.BotDescription, &user.BotLastIconUpdate)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, store.NewErrNotFound("User", id)
-		}
-		return nil, errors.Wrapf(err, "failed to get User with userId=%s", id)
-	}
+    queryString, args, err := query.ToSql()
+    if err != nil {
+        return nil, errors.Wrap(err, "users_get_tosql")
+    }
+    
+    // Debug: Print the actual SQL query
+    fmt.Printf("=== SQL DEBUG ===\n")
+    fmt.Printf("Query: %s\n", queryString)
+    fmt.Printf("Args: %v\n", args)
+    fmt.Printf("================\n")
+    
+    row := us.SqlStore.DBXFromContext(ctx).QueryRow(queryString, args...)
+    var user model.User
+    var props, notifyProps, timezone []byte
+    
+    err = row.Scan(&user.Id, &user.CreateAt, &user.UpdateAt, &user.DeleteAt, &user.Username,
+        &user.Password, &user.AuthData, &user.AuthService, &user.Email, &user.EmailVerified,
+        &user.Nickname, &user.FirstName, &user.LastName, &user.Position, &user.Roles,
+        &user.AllowMarketing, &props, &notifyProps, &user.LastPasswordUpdate, &user.LastPictureUpdate,
+        &user.FailedAttempts, &user.Locale, &timezone, &user.MfaActive, &user.MfaSecret, &user.MfaUsedTimestamps,
+        &user.RemoteId, &user.LastLogin, &user.Phone, &user.Fullname, &user.IsBot, &user.BotDescription, &user.BotLastIconUpdate)
+    
+    if err != nil {
+        fmt.Printf("=== SCAN ERROR ===\n")
+        fmt.Printf("Error: %v\n", err)
+        fmt.Printf("=================\n")
+        if err == sql.ErrNoRows {
+            return nil, store.NewErrNotFound("User", id)
+        }
+        return nil, errors.Wrapf(err, "failed to get User with userId=%s", id)
+    }
+    
+    // Debug: Print scanned values before JSON unmarshaling
+    fmt.Printf("=== SCAN RESULTS ===\n")
+    fmt.Printf("Phone: '%s'\n", user.Phone)
+    fmt.Printf("Fullname: '%s'\n", user.Fullname)
+    fmt.Printf("Username: '%s'\n", user.Username)
+    fmt.Printf("==================\n")
 	if err = json.Unmarshal(props, &user.Props); err != nil {
 		return nil, errors.Wrap(err, "failed to unmarshal user props")
 	}

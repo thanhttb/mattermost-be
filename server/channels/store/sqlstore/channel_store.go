@@ -3119,7 +3119,7 @@ func (s SqlChannelStore) GetMembersForUserWithPagination(userId string, page, pe
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to find ChannelMembers data with and userId=%s", userId)
 	}
-
+	fmt.Println("getting members: ")
 	return dbMembers.ToModel(), nil
 }
 

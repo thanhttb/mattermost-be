@@ -21,7 +21,9 @@ CREATE TABLE IF NOT EXISTS users (
     failedattempts integer,
     locale VARCHAR(5),
     mfaactive boolean,
-    mfasecret VARCHAR(128)
+    mfasecret VARCHAR(128),
+    phone VARCHAR(50) DEFAULT '',
+    fullname VARCHAR(255) DEFAULT '',
 );
 
 ALTER TABLE users DROP COLUMN IF EXISTS lastactivityat;

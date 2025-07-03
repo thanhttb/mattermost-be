@@ -6,6 +6,7 @@ package localcachelayer
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"sort"
 	"sync"
 
@@ -228,8 +229,17 @@ func (s *LocalCacheUserStore) UpdateFailedPasswordAttempts(userID string, attemp
 func (s *LocalCacheUserStore) Get(ctx context.Context, id string) (*model.User, error) {
 	var cacheItem model.User
 	if err := s.rootStore.doStandardReadCache(s.rootStore.userProfileByIdsCache, id, &cacheItem); err == nil {
-		return &cacheItem, nil
+		fmt.Printf("=== CACHE HIT ===\n")
+		fmt.Printf("UserID: %s\n", id)
+		fmt.Printf("Cached Phone: '%s'\n", cacheItem.Phone)
+		fmt.Printf("Cached Fullname: '%s'\n", cacheItem.Fullname)
+		fmt.Printf("Cached Username: '%s'\n", cacheItem.Username)
+		fmt.Printf("================\n")
+		// return &cacheItem, nil
 	}
+
+	fmt.Printf("=== CACHE MISS ===\n")
+	fmt.Printf("UserID: %s\n", id)
 
 	// If it was invalidated, then we need to query master.
 	s.userProfileByIdsMut.Lock()
@@ -244,10 +254,15 @@ func (s *LocalCacheUserStore) Get(ctx context.Context, id string) (*model.User, 
 	if err != nil {
 		return nil, err
 	}
+	
+	fmt.Printf("From SQL Store - Phone: '%s'\n", user.Phone)
+	fmt.Printf("From SQL Store - Fullname: '%s'\n", user.Fullname)
+	fmt.Printf("From SQL Store - Username: '%s'\n", user.Username)
+	fmt.Printf("=================\n")
+	
 	s.rootStore.doStandardAddToCache(s.rootStore.userProfileByIdsCache, id, user)
 	return user, nil
 }
-
 // GetMany is a cache wrapper around the SqlStore method to get a user profiles by ids.
 // It checks if the user entries are present in the cache, returning the entries from cache
 // if it is present. Otherwise, it fetches the entries from the store and stores it in the

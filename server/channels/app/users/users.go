@@ -68,7 +68,6 @@ func (us *UserService) createUser(rctx request.CTX, user *model.User) (*model.Us
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("------", ruser.Phone)
 	if user.EmailVerified {
 		if err := us.verifyUserEmail(ruser.Id, user.Email); err != nil {
 			mlog.Warn("Failed to set email verified", mlog.Err(err))
@@ -91,7 +90,24 @@ func (us *UserService) verifyUserEmail(userID, email string) error {
 }
 
 func (us *UserService) GetUser(userID string) (*model.User, error) {
-	return us.store.Get(context.Background(), userID)
+	// Add debug to see what store type is being used
+    fmt.Printf("=== UserService.GetUser DEBUG ===\n")
+    fmt.Printf("UserID: %s\n", userID)
+    fmt.Printf("Store type: %T\n", us.store)
+    fmt.Printf("==============================\n")
+    
+    user, err := us.store.Get(context.Background(), userID)
+    
+    // Debug the returned user
+    if user != nil {
+        fmt.Printf("=== RETURNED USER FROM STORE ===\n")
+        fmt.Printf("Phone: '%s'\n", user.Phone)
+        fmt.Printf("Fullname: '%s'\n", user.Fullname)
+        fmt.Printf("Username: '%s'\n", user.Username)
+        fmt.Printf("==============================\n")
+    }
+    
+    return user, err
 }
 
 func (us *UserService) GetUsers(userIDs []string) ([]*model.User, error) {

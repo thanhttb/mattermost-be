@@ -56,7 +56,225 @@ func (a *App) DefaultChannelNames(c request.CTX) []string {
 
 	return names
 }
+func (a *App) PopulateMentionCounts(c request.CTX, members model.ChannelMembersWithTeamData, userID string) *model.AppError {
+	if len(members) == 0 {
+		return nil
+	}
 
+	// Get the user once
+	// user, err := a.GetUser(userID)
+	// if err != nil {
+	// 	return err
+	// }
+
+	// Process each channel membership
+	for i, member := range members {
+		// Get the channel unread info which calculates mention counts dynamically
+		channelUnread, unreadErr := a.GetChannelUnread(c, member.ChannelId, userID)
+		if unreadErr != nil {
+			// If we can't get unread info, just continue with 0 mentions
+			c.Logger().Warn("Failed to get channel unread info", 
+				mlog.String("channel_id", member.ChannelId), 
+				mlog.String("user_id", userID), 
+				mlog.Err(unreadErr))
+			continue
+		}
+		// Update the member with the calculated mention counts
+		members[i].MentionCount = channelUnread.MentionCount
+		members[i].MentionCountRoot = channelUnread.MentionCountRoot
+		members[i].UrgentMentionCount = channelUnread.UrgentMentionCount
+		members[i].MsgCount = channelUnread.MsgCount
+		members[i].MsgCountRoot = channelUnread.MsgCountRoot
+	}
+
+	return nil
+}
+// PopulateMentionCountsForChannelMembers calculates mention counts for channel members
+func (a *App) PopulateMentionCountsForChannelMembers(c request.CTX, members model.ChannelMembersWithTeamData, userID string) *model.AppError {
+	if len(members) == 0 {
+		return nil
+	}
+
+	// Get the user once
+	user, err := a.GetUser(userID)
+	if err != nil {
+		return err
+	}
+
+	// Process each channel membership
+	for i, member := range members {
+		// Calculate mention counts for this channel
+		mentionCount, mentionCountRoot, err := a.calculateMentionCountsForUserInChannel(c, user, member.ChannelId)
+		if err != nil {
+			c.Logger().Warn("Failed to calculate mention counts", 
+				mlog.String("channel_id", member.ChannelId), 
+				mlog.String("user_id", userID), 
+				mlog.Err(err))
+			// Continue with next channel - don't fail entire request
+			continue
+		}
+
+		// Update the member with calculated mention counts
+		members[i].MentionCount = mentionCount
+		members[i].MentionCountRoot = mentionCountRoot
+
+		// Also calculate message counts if needed
+		msgCount, msgCountRoot, err := a.calculateMessageCountsForUserInChannel(c, user, member.ChannelId)
+		if err != nil {
+			c.Logger().Warn("Failed to calculate message counts", 
+				mlog.String("channel_id", member.ChannelId), 
+				mlog.Err(err))
+			continue
+		}
+
+		members[i].MsgCount = msgCount
+		members[i].MsgCountRoot = msgCountRoot
+	}
+
+	return nil
+}
+
+// calculateMentionCountsForUserInChannel calculates mention counts for a user in a specific channel
+// Replace your existing function with this corrected version:
+func (a *App) calculateMentionCountsForUserInChannel(c request.CTX, user *model.User, channelID string) (int64, int64, *model.AppError) {
+	// Get the channel member to get LastViewedAt timestamp
+	member, err := a.GetChannelMember(c, channelID, user.Id)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	// Get channel info
+	channel, err := a.GetChannel(c, channelID)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	// For DM/GM channels, every post from other users counts as a mention
+	if channel.Type == model.ChannelTypeDirect || channel.Type == model.ChannelTypeGroup {
+		count, countRoot, nErr := a.Srv().Store().Channel().CountPostsAfter(channelID, member.LastViewedAt, user.Id)
+		if nErr != nil {
+			return 0, 0, model.NewAppError("calculateMentionCountsForUserInChannel", "app.channel.count_posts_since.app_error", nil, "", http.StatusInternalServerError).Wrap(nErr)
+		}
+		return int64(count), int64(countRoot), nil
+	}
+
+	// For regular channels, get posts since LastViewedAt and check for mentions
+	// FIXED: Use the existing GetPostsPage with Since parameter
+	postList, err := a.GetPostsPage(model.GetPostsOptions{
+		ChannelId: channelID,
+		Page:      0,
+		PerPage:   200, // Adjust as needed
+		// Since:     member.LastViewedAt, // This is the key fix!
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+
+	// Build mention keywords for this user
+	members, nErr := a.Srv().Store().Channel().GetAllChannelMembersNotifyPropsForChannel(channelID, true)
+	if nErr != nil {
+		return 0, 0, model.NewAppError("calculateMentionCountsForUserInChannel", "app.channel.get_members.app_error", nil, "", http.StatusInternalServerError).Wrap(nErr)
+	}
+
+	keywords := MentionKeywords{}
+	keywords.AddUser(
+		user,
+		members[user.Id],
+		&model.Status{Status: model.StatusOnline},
+		true,
+	)
+
+	// Get groups for this channel
+	var team *model.Team
+	if channel.TeamId != "" {
+		team, err = a.GetTeam(channel.TeamId)
+		if err != nil {
+			return 0, 0, err
+		}
+	}
+
+	groups, nErr := a.getGroupsAllowedForReferenceInChannel(channel, team)
+	if nErr != nil {
+		return 0, 0, model.NewAppError("calculateMentionCountsForUserInChannel", "app.channel.get_groups.app_error", nil, "", http.StatusInternalServerError).Wrap(nErr)
+	}
+	keywords.AddGroupsMap(groups)
+
+	// Count mentions in posts
+	var mentionCount, mentionCountRoot int64
+	commentMentions := user.NotifyProps[model.CommentsNotifyProp]
+	checkForCommentMentions := commentMentions == model.CommentsNotifyRoot || commentMentions == model.CommentsNotifyAny
+
+	mentionedByThread := make(map[string]bool)
+	
+	// IMPORTANT: Only count posts created AFTER LastViewedAt
+	for _, post := range postList.Posts {
+		// Double-check timestamp (defense in depth)
+		if post.CreateAt <= member.LastViewedAt {
+			continue
+		}
+		
+		if isPostMention(user, post, keywords, postList.Posts, mentionedByThread, checkForCommentMentions) {
+			mentionCount++
+			if post.RootId == "" {
+				mentionCountRoot++
+			}
+		}
+	}
+
+	return mentionCount, mentionCountRoot, nil
+}
+
+// Helper function to get posts since a timestamp for mention checking
+func (a *App) getPostsSinceForMentions(c request.CTX, channelID string, since int64) (map[string]*model.Post, *model.AppError) {
+	// Get posts in batches to avoid memory issues
+	const batchSize = 200
+	allPosts := make(map[string]*model.Post)
+	
+	page := 0
+	for {
+		postList, err := a.GetPostsPage(model.GetPostsOptions{
+			ChannelId: channelID,
+			Page:      page,
+			PerPage:   batchSize,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if len(postList.Posts) == 0 {
+			break
+		}
+
+		// Add posts to our map
+		for postId, post := range postList.Posts {
+			allPosts[postId] = post
+		}
+
+		if len(postList.Posts) < batchSize {
+			break
+		}
+		page++
+	}
+
+	return allPosts, nil
+}
+
+// calculateMessageCountsForUserInChannel calculates total message counts
+func (a *App) calculateMessageCountsForUserInChannel(c request.CTX, user *model.User, channelID string) (int64, int64, *model.AppError) {
+	// Get the channel member to get LastViewedAt timestamp
+	member, err := a.GetChannelMember(c, channelID, user.Id)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	// Count all posts since LastViewedAt
+	count, countRoot, nErr := a.Srv().Store().Channel().CountPostsAfter(channelID, member.LastViewedAt, "")
+	if nErr != nil {
+		return 0, 0, model.NewAppError("calculateMessageCountsForUserInChannel", "app.channel.count_posts_since.app_error", nil, "", http.StatusInternalServerError).Wrap(nErr)
+	}
+
+	return int64(count), int64(countRoot), nil
+}
 func (a *App) JoinDefaultChannels(c request.CTX, teamID string, user *model.User, shouldBeAdmin bool, userRequestorId string) *model.AppError {
 	var requestor *model.User
 	var nErr error

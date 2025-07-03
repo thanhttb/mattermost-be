@@ -2038,7 +2038,11 @@ func (a *App) countMentionsFromPost(c request.CTX, user *model.User, post *model
 
 		page += 1
 	}
-
+	mentions := getExplicitMentions(post, keywords)
+	if _, ok := mentions.Mentions[user.Id]; ok {
+		// This should log if the mention is detected
+		c.Logger().Info("Mention detected", mlog.String("user_id", user.Id), mlog.String("post_id", post.Id))
+	}
 	return count, countRoot, urgentCount, nil
 }
 

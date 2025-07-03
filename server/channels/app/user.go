@@ -1280,6 +1280,8 @@ func (a *App) isUniqueToGroupNames(val string) *model.AppError {
 
 func (a *App) UpdateUser(c request.CTX, user *model.User, sendNotifications bool) (*model.User, *model.AppError) {
 	prev, err := a.ch.srv.userService.GetUser(user.Id)
+	fmt.Println("Phone: ",prev.Phone)
+	fmt.Println("username: " , prev.Username)
 	if err != nil {
 		var nfErr *store.ErrNotFound
 		switch {
@@ -1354,7 +1356,7 @@ func (a *App) UpdateUser(c request.CTX, user *model.User, sendNotifications bool
 	}
 
 	newUser := userUpdate.New
-
+	
 	if (newUser.Username != userUpdate.Old.Username) && (newUser.LastPictureUpdate <= 0) {
 		// When a username is updated and the profile is still using a default profile picture, generate a new one based on their username
 		if err := a.UpdateDefaultProfileImage(c, newUser); err != nil {

@@ -3321,6 +3321,12 @@ func getChannelMembersForUser(c *Context, w http.ResponseWriter, r *http.Request
 			return
 		}
 
+		// *** ADD THIS: Calculate mention counts dynamically ***
+		if err := c.App.PopulateMentionCountsForChannelMembers(c.AppContext, members, c.Params.UserId); err != nil {
+			c.Logger.Warn("Failed to populate mention counts", mlog.Err(err))
+			// Continue anyway - don't fail the entire request
+		}
+
 		if err := json.NewEncoder(w).Encode(members); err != nil {
 			c.Logger.Warn("Error while writing response", mlog.Err(err))
 		}
@@ -3345,13 +3351,17 @@ func getChannelMembersForUser(c *Context, w http.ResponseWriter, r *http.Request
 
 		members, err := c.App.GetChannelMembersWithTeamDataForUserWithPagination(c.AppContext, c.Params.UserId, cursor)
 		if err != nil {
-			// If the page size was a perfect multiple of the total number of results,
-			// then the last query will always return zero results.
 			if fromChannelID != "" && err.Id == app.MissingChannelMemberError {
 				break
 			}
 			c.Err = err
 			return
+		}
+
+		// *** ADD THIS: Calculate mention counts for each batch ***
+		if err := c.App.PopulateMentionCountsForChannelMembers(c.AppContext, members, c.Params.UserId); err != nil {
+			c.Logger.Warn("Failed to populate mention counts", mlog.Err(err))
+			// Continue anyway
 		}
 
 		for _, member := range members {
